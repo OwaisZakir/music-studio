@@ -6,9 +6,11 @@ import { TrackInfo } from "./TrackInfo";
 import { Playlist, Track, LyricLine } from "./Playlist";
 import { Lyrics } from "./Lyrics";
 import { LyricsEditor } from "./LyricsEditor";
+import { PlaylistManager, Playlist as PlaylistType } from "./PlaylistManager";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Mic2, Edit3, X } from "lucide-react";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
 
 const DEMO_TRACKS: Track[] = [
   {
@@ -108,7 +110,17 @@ const DEMO_TRACKS: Track[] = [
 ];
 
 export const MusicPlayer = () => {
-  const [currentTrackId, setCurrentTrackId] = useState(DEMO_TRACKS[0].id);
+  const [playlists, setPlaylists] = useLocalStorage<PlaylistType[]>("music-playlists", [
+    {
+      id: "default",
+      name: "My Library",
+      trackIds: DEMO_TRACKS.map((t) => t.id),
+      createdAt: Date.now(),
+    },
+  ]);
+  const [allTracks, setAllTracks] = useLocalStorage<Track[]>("music-tracks", DEMO_TRACKS);
+  const [currentPlaylistId, setCurrentPlaylistId] = useLocalStorage<string>("current-playlist", "default");
+  const [currentTrackId, setCurrentTrackId] = useState(allTracks[0]?.id || DEMO_TRACKS[0].id);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(70);
@@ -118,7 +130,11 @@ export const MusicPlayer = () => {
   const [showLyrics, setShowLyrics] = useState(true);
   const [isEditingLyrics, setIsEditingLyrics] = useState(false);
 
-  const currentTrack = DEMO_TRACKS.find((t) => t.id === currentTrackId) || DEMO_TRACKS[0];
+  const currentPlaylist = playlists.find((p) => p.id === currentPlaylistId) || playlists[0];
+  const playlistTracks = currentPlaylist
+    ? currentPlaylist.trackIds.map((id) => allTracks.find((t) => t.id === id)).filter(Boolean) as Track[]
+    : [];
+  const currentTrack = allTracks.find((t) => t.id === currentTrackId) || allTracks[0];
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -139,9 +155,9 @@ export const MusicPlayer = () => {
   const handlePlayPause = () => setIsPlaying(!isPlaying);
 
   const handleNext = () => {
-    const currentIndex = DEMO_TRACKS.findIndex((t) => t.id === currentTrackId);
-    const nextIndex = (currentIndex + 1) % DEMO_TRACKS.length;
-    setCurrentTrackId(DEMO_TRACKS[nextIndex].id);
+    const currentIndex = playlistTracks.findIndex((t) => t.id === currentTrackId);
+    const nextIndex = (currentIndex + 1) % playlistTracks.length;
+    setCurrentTrackId(playlistTracks[nextIndex].id);
     setCurrentTime(0);
   };
 
@@ -149,9 +165,9 @@ export const MusicPlayer = () => {
     if (currentTime > 3) {
       setCurrentTime(0);
     } else {
-      const currentIndex = DEMO_TRACKS.findIndex((t) => t.id === currentTrackId);
-      const prevIndex = currentIndex === 0 ? DEMO_TRACKS.length - 1 : currentIndex - 1;
-      setCurrentTrackId(DEMO_TRACKS[prevIndex].id);
+      const currentIndex = playlistTracks.findIndex((t) => t.id === currentTrackId);
+      const prevIndex = currentIndex === 0 ? playlistTracks.length - 1 : currentIndex - 1;
+      setCurrentTrackId(playlistTracks[prevIndex].id);
       setCurrentTime(0);
     }
   };
@@ -176,10 +192,43 @@ export const MusicPlayer = () => {
   };
 
   const handleSaveLyrics = (lyrics: LyricLine[]) => {
-    const trackIndex = DEMO_TRACKS.findIndex((t) => t.id === currentTrackId);
+    const trackIndex = allTracks.findIndex((t) => t.id === currentTrackId);
     if (trackIndex !== -1) {
-      DEMO_TRACKS[trackIndex].lyrics = lyrics;
+      const updatedTracks = [...allTracks];
+      updatedTracks[trackIndex].lyrics = lyrics;
+      setAllTracks(updatedTracks);
     }
+  };
+
+  const handlePlaylistCreate = (name: string) => {
+    const newPlaylist: PlaylistType = {
+      id: Date.now().toString(),
+      name,
+      trackIds: [],
+      createdAt: Date.now(),
+    };
+    setPlaylists([...playlists, newPlaylist]);
+  };
+
+  const handlePlaylistDelete = (playlistId: string) => {
+    if (playlists.length === 1) return;
+    const filtered = playlists.filter((p) => p.id !== playlistId);
+    setPlaylists(filtered);
+    if (currentPlaylistId === playlistId) {
+      setCurrentPlaylistId(filtered[0].id);
+    }
+  };
+
+  const handlePlaylistRename = (playlistId: string, newName: string) => {
+    setPlaylists(playlists.map((p) => (p.id === playlistId ? { ...p, name: newName } : p)));
+  };
+
+  const handleTrackReorder = (reorderedTracks: Track[]) => {
+    const updatedPlaylist = {
+      ...currentPlaylist,
+      trackIds: reorderedTracks.map((t) => t.id),
+    };
+    setPlaylists(playlists.map((p) => (p.id === currentPlaylist.id ? updatedPlaylist : p)));
   };
 
   return (
@@ -258,13 +307,24 @@ export const MusicPlayer = () => {
 
           {/* Playlist */}
           <div className="glass-effect rounded-2xl p-6 space-y-4">
-            <h2 className="text-2xl font-bold text-foreground">Queue</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-foreground">{currentPlaylist.name}</h2>
+              <PlaylistManager
+                playlists={playlists}
+                currentPlaylistId={currentPlaylistId}
+                onPlaylistSelect={setCurrentPlaylistId}
+                onPlaylistCreate={handlePlaylistCreate}
+                onPlaylistDelete={handlePlaylistDelete}
+                onPlaylistRename={handlePlaylistRename}
+              />
+            </div>
             <ScrollArea className="h-[calc(100vh-280px)] lg:h-[calc(100vh-200px)]">
               <Playlist
-                tracks={DEMO_TRACKS}
+                tracks={playlistTracks}
                 currentTrackId={currentTrackId}
                 isPlaying={isPlaying}
                 onTrackSelect={handleTrackSelect}
+                onReorder={handleTrackReorder}
               />
             </ScrollArea>
           </div>
