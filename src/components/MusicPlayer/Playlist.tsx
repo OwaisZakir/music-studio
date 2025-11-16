@@ -1,6 +1,11 @@
 import { Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+export interface LyricLine {
+  time: number;
+  text: string;
+}
+
 export interface Track {
   id: string;
   title: string;
@@ -8,6 +13,7 @@ export interface Track {
   album: string;
   duration: number;
   albumArt: string;
+  lyrics?: LyricLine[];
 }
 
 interface PlaylistProps {
